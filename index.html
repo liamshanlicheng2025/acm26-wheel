@@ -123,7 +123,9 @@
     background: rgba(255,255,255,.06); color: #eee; border: 1px solid rgba(255,255,255,.15);
     border-radius: 10px; padding: 10px; font-size: 14px; font-family: inherit; resize: vertical;
   }
-  #applyRoster { margin-top: 8px; background: rgba(255,255,255,.1); color: #e8e0fb; font-size: 14px; padding: 8px 22px; border: 1px solid rgba(255,255,255,.2); }
+  #applyRoster, .applyRoster { margin-top: 8px; background: rgba(255,255,255,.1); color: #e8e0fb; font-size: 14px; padding: 8px 22px; border: 1px solid rgba(255,255,255,.2); }
+  .roster-block { margin-top: 14px; }
+  .roster-block label { color: #d9cff2; letter-spacing: 1px; }
 
   /* 中奖遮罩 */
   #overlay {
@@ -179,9 +181,22 @@
 <div id="counter"></div>
 
 <details>
-  <summary>编辑全员名单（每行或顿号分隔一个名字，应用后全部奖池重置；A/B 班名单固定为班级分组）</summary>
-  <textarea id="rosterText"></textarea>
-  <button id="applyRoster">应用名单</button>
+  <summary>编辑名单（三个转盘各自独立维护；在某个名单里修改并应用后，仅重置该转盘）</summary>
+  <div class="roster-block">
+    <label>全员名单</label>
+    <textarea id="roster-all"></textarea>
+    <button class="applyRoster" data-g="all">应用全员名单</button>
+  </div>
+  <div class="roster-block">
+    <label>A班名单（不含队员）</label>
+    <textarea id="roster-a"></textarea>
+    <button class="applyRoster" data-g="a">应用A班名单</button>
+  </div>
+  <div class="roster-block">
+    <label>B班名单</label>
+    <textarea id="roster-b"></textarea>
+    <button class="applyRoster" data-g="b">应用B班名单</button>
+  </div>
 </details>
 
 <canvas id="confetti"></canvas>
@@ -215,12 +230,16 @@ const GROUP_NAMES = {
 const GROUP_LABEL = { all: "全员", a: "A班", b: "B班" };
 
 /* ============ 状态 ============ */
-const LS_KEY = "greatidea_wheel_v2";
-let fullAll = GROUP_NAMES.all.slice();     // 全员完整名单（可被编辑器修改）
-let remainingMap = {                        // 各奖池当前剩余
+const LS_KEY = "greatidea_wheel_v3";
+let fullMap = {                             // 各奖池完整名单（均可独立编辑）
   all: GROUP_NAMES.all.slice(),
   a: GROUP_NAMES.a.slice(),
   b: GROUP_NAMES.b.slice()
+};
+let remainingMap = {                        // 各奖池当前剩余
+  all: fullMap.all.slice(),
+  a: fullMap.a.slice(),
+  b: fullMap.b.slice()
 };
 let active = "all";        // 当前转盘显示的奖池
 let rotation = 0;
@@ -234,7 +253,6 @@ const resetBtn = document.getElementById("resetBtn");
 const counterEl = document.getElementById("counter");
 const overlay = document.getElementById("overlay");
 const winnerNameEl = document.getElementById("winnerName");
-const rosterText = document.getElementById("rosterText");
 const spinBtn = document.getElementById("spinBtn");
 const poolBtns = [...document.querySelectorAll("#poolSwitcher button")];
 
@@ -244,20 +262,18 @@ const pool = () => remainingMap[active];
 
 /* ============ 存档 ============ */
 function save() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ fullAll, remainingMap })); } catch (e) {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ fullMap, remainingMap })); } catch (e) {}
 }
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(LS_KEY));
-    if (!d || !Array.isArray(d.fullAll) || !d.fullAll.length || !d.remainingMap) return;
-    // A/B 班名单以固定分组为准；全员名单允许自定义
-    for (const g of ["a", "b"]) {
-      const rem = Array.isArray(d.remainingMap[g]) ? d.remainingMap[g] : [];
-      remainingMap[g] = rem.filter(n => GROUP_NAMES[g].includes(n));
-    }
-    fullAll = d.fullAll;
-    if (Array.isArray(d.remainingMap.all)) {
-      remainingMap.all = d.remainingMap.all.filter(n => fullAll.includes(n));
+    if (!d || !d.fullMap || !d.remainingMap) return;
+    for (const g of ["all", "a", "b"]) {
+      if (Array.isArray(d.fullMap[g]) && d.fullMap[g].length) {
+        fullMap[g] = [...new Set(d.fullMap[g])];
+        const rem = Array.isArray(d.remainingMap[g]) ? d.remainingMap[g] : [];
+        remainingMap[g] = rem.filter(n => fullMap[g].includes(n));
+      }
     }
   } catch (e) {}
 }
@@ -444,8 +460,7 @@ function fireConfetti() {
 
 /* ============ 其他控件 ============ */
 function updateCounter() {
-  const full = active === "all" ? fullAll.length : GROUP_NAMES[active].length;
-  counterEl.innerHTML = `当前奖池：<b>${GROUP_LABEL[active]}</b> · 剩余 <b>${pool().length}</b> 人 / 共 ${full} 人`;
+  counterEl.innerHTML = `当前奖池：<b>${GROUP_LABEL[active]}</b> · 剩余 <b>${pool().length}</b> 人 / 共 ${fullMap[active].length} 人`;
   poolBtns.forEach(b => b.classList.toggle("active-pool", b.dataset.g === active));
 }
 
@@ -469,7 +484,7 @@ spinBtn.onclick = spin;
 
 resetBtn.onclick = () => {
   if (spinning) return;
-  remainingMap = { all: fullAll.slice(), a: GROUP_NAMES.a.slice(), b: GROUP_NAMES.b.slice() };
+  remainingMap = { all: fullMap.all.slice(), a: fullMap.a.slice(), b: fullMap.b.slice() };
   save(); drawWheel(); updateCounter();
   resultEl.className = "idle";
   resultEl.textContent = "已重置，点击开始抽签";
@@ -477,19 +492,25 @@ resetBtn.onclick = () => {
 
 wheel.onclick = () => { if (!spinning) spin(); };
 
-document.getElementById("applyRoster").onclick = () => {
-  const names = rosterText.value.split(/[\n,，、;；\s]+/).map(s => s.trim()).filter(Boolean);
-  if (!names.length) return alert("名单为空");
-  fullAll = [...new Set(names)];
-  remainingMap = { all: fullAll.slice(), a: GROUP_NAMES.a.slice(), b: GROUP_NAMES.b.slice() };
-  save(); drawWheel(); updateCounter();
-  resultEl.className = "idle";
-  resultEl.textContent = "全员名单已更新，全部奖池已重置";
-};
+document.querySelectorAll(".applyRoster").forEach(btn => {
+  btn.onclick = () => {
+    const g = btn.dataset.g;
+    const names = document.getElementById("roster-" + g).value
+      .split(/[\n,，、;；\s]+/).map(s => s.trim()).filter(Boolean);
+    if (!names.length) return alert("名单为空");
+    fullMap[g] = [...new Set(names)];
+    remainingMap[g] = fullMap[g].slice();
+    save(); drawWheel(); updateCounter();
+    resultEl.className = "idle";
+    resultEl.textContent = `${GROUP_LABEL[g]}名单已更新并重置（${fullMap[g].length} 人）`;
+  };
+});
 
 /* ============ 初始化 ============ */
 load();
-rosterText.value = fullAll.join("、");
+for (const g of ["all", "a", "b"]) {
+  document.getElementById("roster-" + g).value = fullMap[g].join("、");
+}
 drawWheel();
 updateCounter();
 </script>

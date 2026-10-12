@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>26级ACM班课堂抽签</title>
+<style>
+  :root {
+    --gold: #f5c451;
+    --bg1: #1a1130;
+    --bg2: #2d1b4e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at top, var(--bg2), var(--bg1) 70%);
+    color: #f3eefc;
+    font-family: "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+    user-select: none;
+  }
+  h1 {
+    font-size: 30px;
+    letter-spacing: 4px;
+    font-weight: 600;
+    color: var(--gold);
+    text-shadow: 0 2px 12px rgba(245, 196, 81, .35);
+    margin-bottom: 14px;
+  }
+
+  /* 左上角奖池切换器 */
+  #poolSwitcher {
+    position: fixed; top: 18px; left: 18px; z-index: 10;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #poolSwitcher button {
+    background: rgba(255,255,255,.07);
+    color: #cfc4ea;
+    border: 1px solid rgba(255,255,255,.18);
+    font-size: 14px; letter-spacing: 1px;
+    padding: 9px 18px; border-radius: 999px;
+    text-align: left;
+  }
+  #poolSwitcher button:hover:not(:disabled) { background: rgba(255,255,255,.15); }
+  #poolSwitcher button.active-pool {
+    background: linear-gradient(135deg, #b18cff, #7c5cd6);
+    color: #fff; font-weight: 700;
+    border-color: transparent;
+    box-shadow: 0 4px 14px rgba(124, 92, 214, .5);
+  }
+
+  /* 大结果区 */
+  #result {
+    min-height: 96px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 64px;
+    font-weight: 800;
+    letter-spacing: 6px;
+    margin-bottom: 8px;
+    color: #fff;
+    text-shadow: 0 0 24px rgba(245, 196, 81, .55);
+  }
+  #result.idle { color: #6f639b; font-size: 28px; letter-spacing: 3px; font-weight: 500; text-shadow: none; }
+  #result.rolling { animation: flicker .07s infinite alternate; }
+  @keyframes flicker { from { opacity: .85; } to { opacity: 1; } }
+
+  .wheel-wrap { position: relative; width: 560px; max-width: 92vw; }
+  canvas#wheel { width: 100%; display: block; cursor: pointer; filter: drop-shadow(0 12px 32px rgba(0,0,0,.5)); }
+  /* 指针 */
+  #pointer {
+    position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 16px solid transparent;
+    border-right: 16px solid transparent;
+    border-top: 30px solid var(--gold);
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,.5));
+    z-index: 3;
+  }
+  #hub {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 76px; height: 76px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff3d6, var(--gold) 65%, #b8860b);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #5a3d00; font-size: 15px; letter-spacing: 1px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.45), inset 0 2px 4px rgba(255,255,255,.6);
+    z-index: 2; pointer-events: none;
+  }
+
+  .controls { display: flex; gap: 14px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
+  button {
+    font-family: inherit;
+    border: none; border-radius: 999px;
+    padding: 13px 30px; font-size: 17px; letter-spacing: 2px;
+    cursor: pointer; transition: transform .12s, box-shadow .12s, opacity .2s;
+  }
+  button:active { transform: scale(.96); }
+  #spinBtn {
+    background: linear-gradient(135deg, #ffd97a, #f0a832);
+    color: #4a3200; font-weight: 700;
+    box-shadow: 0 6px 20px rgba(240, 168, 50, .4);
+  }
+  #spinBtn:hover:not(:disabled) { box-shadow: 0 8px 26px rgba(240, 168, 50, .6); transform: translateY(-2px); }
+  #resetBtn {
+    background: rgba(255,255,255,.08); color: #cfc4ea;
+    border: 1px solid rgba(255,255,255,.18); font-size: 15px; padding: 12px 26px;
+  }
+  #resetBtn:hover { background: rgba(255,255,255,.16); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  #counter { margin-top: 14px; color: #9d8fc0; font-size: 14px; letter-spacing: 1px; }
+  #counter b { color: var(--gold); }
+
+  /* 名单编辑 */
+  details { margin-top: 26px; width: 560px; max-width: 92vw; color: #b9aede; font-size: 14px; }
+  summary { cursor: pointer; letter-spacing: 1px; }
+  textarea {
+    width: 100%; height: 130px; margin-top: 10px;
+    background: rgba(255,255,255,.06); color: #eee; border: 1px solid rgba(255,255,255,.15);
+    border-radius: 10px; padding: 10px; font-size: 14px; font-family: inherit; resize: vertical;
+  }
+  #applyRoster { margin-top: 8px; background: rgba(255,255,255,.1); color: #e8e0fb; font-size: 14px; padding: 8px 22px; border: 1px solid rgba(255,255,255,.2); }
+
+  /* 中奖遮罩 */
+  #overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(12, 6, 28, .88);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+  }
+  #overlay.show { display: flex; }
+  #winnerLabel { font-size: 22px; letter-spacing: 8px; color: var(--gold); margin-bottom: 10px; }
+  #winnerName {
+    font-size: 120px; font-weight: 900; letter-spacing: 12px; color: #fff;
+    text-shadow: 0 0 40px rgba(245,196,81,.9), 0 0 90px rgba(245,196,81,.5);
+  }
+  #overlay.show #winnerName { animation: pop .7s cubic-bezier(.2, 2.4, .4, 1) both; }
+  #overlay.show #winnerLabel { animation: fadein .5s .15s both; }
+  @keyframes pop {
+    0% { transform: scale(.1) rotate(-8deg); opacity: 0; }
+    60% { transform: scale(1.12) rotate(2deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0); }
+  }
+  @keyframes fadein { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; } }
+  #overlayBtns { margin-top: 46px; display: flex; gap: 18px; animation: fadein .5s .55s both; }
+  #overlayBtns button { font-size: 16px; padding: 12px 30px; }
+  #removeBtn { background: linear-gradient(135deg, #ffd97a, #f0a832); color: #4a3200; font-weight: 700; }
+  #keepBtn { background: rgba(255,255,255,.1); color: #d9cff2; border: 1px solid rgba(255,255,255,.25); }
+  canvas#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 49; }
+</style>
+</head>
+<body>
+
+<h1>26级ACM班课堂抽签</h1>
+
+<div id="result" class="idle">点击转盘或按钮开始</div>
+
+<div class="wheel-wrap">
+  <div id="pointer"></div>
+  <canvas id="wheel" width="1120" height="1120"></canvas>
+  <div id="hub">抽签</div>
+</div>
+
+<div id="poolSwitcher">
+  <button data-g="all">全员抽签</button>
+  <button data-g="a">A班抽签（不含队员）</button>
+  <button data-g="b">B班抽签</button>
+</div>
+
+<div class="controls">
+  <button id="spinBtn">开始抽签</button>
+  <button id="resetBtn">重置名单</button>
+</div>
+<div id="counter"></div>
+
+<details>
+  <summary>编辑全员名单（每行或顿号分隔一个名字，应用后全部奖池重置；A/B 班名单固定为班级分组）</summary>
+  <textarea id="rosterText"></textarea>
+  <button id="applyRoster">应用名单</button>
+</details>
+
+<canvas id="confetti"></canvas>
+
+<div id="overlay">
+  <div id="winnerLabel">🎉 恭 喜 🎉</div>
+  <div id="winnerName"></div>
+  <div id="overlayBtns">
+    <button id="removeBtn">移出名单，继续下次抽签</button>
+    <button id="keepBtn">保留在转盘中</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============ 名单（2026秋 伟大思想班级，按 ACMOJ 分组；已排除助教） ============ */
+const GROUP_NAMES = {
+  all: [ // 全员 35 人 = A班 + B班 + 队员
+    "曾逸轩","骆雨霄","刘健坤","肖贯勋","王舟扬","容子睿","王子麟",
+    "周希宸","杨景皓","徐浩鑫","刘宇峰","申润庭","李文杰","李晰","魏嘉玺","郭庆桐","魏诗然","石振宁",
+    "袁子涵","贺晨宇","朱逸可","葛昱宸","罗昕玥","史智润","程康业","王子珩","张与伦","董皓宸","朱彦霖","林昀","施响","张淇竣","范文锴","刘欣睿","胡家瑜"
+  ],
+  a: [ // A班 11 人
+    "周希宸","杨景皓","徐浩鑫","刘宇峰","申润庭","李文杰","李晰","魏嘉玺","郭庆桐","魏诗然","石振宁"
+  ],
+  b: [ // B班 17 人
+    "袁子涵","贺晨宇","朱逸可","葛昱宸","罗昕玥","史智润","程康业","王子珩","张与伦","董皓宸","朱彦霖","林昀","施响","张淇竣","范文锴","刘欣睿","胡家瑜"
+  ]
+};
+const GROUP_LABEL = { all: "全员", a: "A班", b: "B班" };
+
+/* ============ 状态 ============ */
+const LS_KEY = "greatidea_wheel_v2";
+let fullAll = GROUP_NAMES.all.slice();     // 全员完整名单（可被编辑器修改）
+let remainingMap = {                        // 各奖池当前剩余
+  all: GROUP_NAMES.all.slice(),
+  a: GROUP_NAMES.a.slice(),
+  b: GROUP_NAMES.b.slice()
+};
+let active = "all";        // 当前转盘显示的奖池
+let rotation = 0;
+let spinning = false;
+let currentWinner = null;
+
+const wheel = document.getElementById("wheel");
+const ctx = wheel.getContext("2d");
+const resultEl = document.getElementById("result");
+const resetBtn = document.getElementById("resetBtn");
+const counterEl = document.getElementById("counter");
+const overlay = document.getElementById("overlay");
+const winnerNameEl = document.getElementById("winnerName");
+const rosterText = document.getElementById("rosterText");
+const spinBtn = document.getElementById("spinBtn");
+const poolBtns = [...document.querySelectorAll("#poolSwitcher button")];
+
+const COLORS = ["#7c5cd6","#e0607e","#3fa7a0","#e8934a","#5b8def","#c95fb8","#67b25c","#d6b445"];
+
+const pool = () => remainingMap[active];
+
+/* ============ 存档 ============ */
+function save() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ fullAll, remainingMap })); } catch (e) {}
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_KEY));
+    if (!d || !Array.isArray(d.fullAll) || !d.fullAll.length || !d.remainingMap) return;
+    // A/B 班名单以固定分组为准；全员名单允许自定义
+    for (const g of ["a", "b"]) {
+      const rem = Array.isArray(d.remainingMap[g]) ? d.remainingMap[g] : [];
+      remainingMap[g] = rem.filter(n => GROUP_NAMES[g].includes(n));
+    }
+    fullAll = d.fullAll;
+    if (Array.isArray(d.remainingMap.all)) {
+      remainingMap.all = d.remainingMap.all.filter(n => fullAll.includes(n));
+    }
+  } catch (e) {}
+}
+
+/* ============ 画转盘 ============ */
+function drawWheel() {
+  const names = pool();
+  const n = names.length;
+  const W = wheel.width, cx = W / 2, cy = W / 2, R = W / 2 - 12;
+  ctx.clearRect(0, 0, W, W);
+  if (n === 0) {
+    ctx.fillStyle = "rgba(255,255,255,.1)";
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#9d8fc0";
+    ctx.font = `500 ${W * 0.045}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("该奖池已抽完，请重置", cx, cy);
+    return;
+  }
+  const slice = Math.PI * 2 / n;
+  for (let i = 0; i < n; i++) {
+    const a0 = rotation + i * slice, a1 = a0 + slice;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, R, a0, a1);
+    ctx.closePath();
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.35)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 名字：沿扇区中半径方向排列
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(a0 + slice / 2);
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    const fontSize = Math.min(W * 0.052, slice * R * 0.42);
+    ctx.font = `700 ${fontSize}px "PingFang SC","Microsoft YaHei",sans-serif`;
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = "rgba(0,0,0,.4)";
+    ctx.shadowBlur = 4;
+    ctx.fillText(names[i], R - W * 0.035, 0);
+    ctx.restore();
+  }
+  // 外圈
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.lineWidth = 10; ctx.strokeStyle = "#f5c451"; ctx.stroke();
+}
+
+/* ============ 指针处名字显示（与转盘实时同步） ============ */
+let lastShown = null;
+function nameUnderPointer() {
+  const names = pool();
+  const n = names.length;
+  if (!n) return null;
+  const slice = Math.PI * 2 / n;
+  const local = ((Math.PI * 1.5 - rotation) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+  return names[Math.floor(local / slice)];
+}
+function syncPointerName() {
+  const name = nameUnderPointer();
+  if (name !== null && name !== lastShown) {
+    lastShown = name;
+    resultEl.textContent = name;
+  }
+}
+
+/* ============ 抽签 ============ */
+const easeOutQuart = t => 1 - Math.pow(1 - t, 4);
+
+function setButtonsDisabled(v) {
+  poolBtns.forEach(b => b.disabled = v);
+  spinBtn.disabled = v;
+  resetBtn.disabled = v;
+}
+
+function spin() {
+  if (spinning) return;
+  const names = pool();
+  const n = names.length;
+  if (n === 0) { resultEl.className = "idle"; resultEl.textContent = "该奖池已抽完，点「重置名单」重新开始"; return; }
+  spinning = true;
+  setButtonsDisabled(true);
+
+  const slice = Math.PI * 2 / n;
+  const k = Math.floor(Math.random() * n);              // 中签者下标
+  const offset = 0.15 + Math.random() * 0.7;            // 落在扇区中部，避开边界
+  // 指针在正上方（3π/2 方向），求最终角度使指针落在第 k 个扇区内
+  const targetLocal = k * slice + offset * slice;
+  const cur = ((rotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  let delta = (Math.PI * 1.5 - targetLocal - cur) % (Math.PI * 2);
+  if (delta < 0) delta += Math.PI * 2;
+  const totalDelta = delta + Math.PI * 2 * (5 + Math.floor(Math.random() * 3)); // 多转 5~7 圈
+  const duration = 4200 + Math.random() * 1200;
+  const start = performance.now();
+  const startRot = rotation;
+
+  resultEl.className = "rolling";
+  lastShown = null;
+
+  (function frame(now) {
+    const t = Math.min((now - start) / duration, 1);
+    rotation = startRot + totalDelta * easeOutQuart(t);
+    drawWheel();
+    syncPointerName();
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      spinning = false;
+      currentWinner = names[k];
+      resultEl.className = "";
+      resultEl.textContent = currentWinner;
+      lastShown = currentWinner;
+      setTimeout(showWinner, 450);
+    }
+  })(performance.now());
+}
+
+/* ============ 中奖动画 ============ */
+function showWinner() {
+  winnerNameEl.textContent = currentWinner;
+  overlay.classList.remove("show");
+  void overlay.offsetWidth;
+  overlay.classList.add("show");
+  fireConfetti();
+}
+
+document.getElementById("removeBtn").onclick = () => {
+  // 只从当前奖池移出，三个奖池进度互不影响
+  remainingMap[active] = remainingMap[active].filter(n => n !== currentWinner);
+  overlay.classList.remove("show");
+  save(); drawWheel(); updateCounter();
+  setButtonsDisabled(false);
+  resultEl.className = "idle";
+  resultEl.textContent = `${currentWinner} 已移出，点击继续`;
+};
+document.getElementById("keepBtn").onclick = () => {
+  overlay.classList.remove("show");
+  save(); drawWheel();
+  setButtonsDisabled(false);
+};
+
+/* ============ 彩带 ============ */
+const confettiCanvas = document.getElementById("confetti");
+const cctx = confettiCanvas.getContext("2d");
+function fireConfetti() {
+  confettiCanvas.width = innerWidth;
+  confettiCanvas.height = innerHeight;
+  const pieces = [];
+  const colors = ["#f5c451", "#e0607e", "#7c5cd6", "#3fa7a0", "#fff", "#5b8def"];
+  for (let i = 0; i < 160; i++) {
+    pieces.push({
+      x: innerWidth / 2 + (Math.random() - .5) * 240,
+      y: innerHeight / 2,
+      vx: (Math.random() - .5) * 16,
+      vy: -Math.random() * 15 - 4,
+      w: 6 + Math.random() * 8,
+      h: 4 + Math.random() * 6,
+      rot: Math.random() * Math.PI,
+      vr: (Math.random() - .5) * .3,
+      color: colors[i % colors.length]
+    });
+  }
+  const t0 = performance.now();
+  (function tick(now) {
+    const el = (now - t0) / 1000;
+    cctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+    for (const p of pieces) {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.35; p.rot += p.vr;
+      cctx.save();
+      cctx.translate(p.x, p.y);
+      cctx.rotate(p.rot);
+      cctx.globalAlpha = Math.max(0, 1 - el / 3);
+      cctx.fillStyle = p.color;
+      cctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      cctx.restore();
+    }
+    if (el < 3.2) requestAnimationFrame(tick);
+    else cctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+  })(t0);
+}
+
+/* ============ 其他控件 ============ */
+function updateCounter() {
+  const full = active === "all" ? fullAll.length : GROUP_NAMES[active].length;
+  counterEl.innerHTML = `当前奖池：<b>${GROUP_LABEL[active]}</b> · 剩余 <b>${pool().length}</b> 人 / 共 ${full} 人`;
+  poolBtns.forEach(b => b.classList.toggle("active-pool", b.dataset.g === active));
+}
+
+function switchPool(g, idleText) {
+  active = g;
+  lastShown = null;
+  drawWheel();
+  updateCounter();
+  resultEl.className = "idle";
+  resultEl.textContent = idleText;
+}
+
+poolBtns.forEach(btn => {
+  btn.onclick = () => {
+    if (spinning || btn.dataset.g === active) return;
+    switchPool(btn.dataset.g, `已切换到${GROUP_LABEL[btn.dataset.g]}奖池，点击开始抽签`);
+  };
+});
+
+spinBtn.onclick = spin;
+
+resetBtn.onclick = () => {
+  if (spinning) return;
+  remainingMap = { all: fullAll.slice(), a: GROUP_NAMES.a.slice(), b: GROUP_NAMES.b.slice() };
+  save(); drawWheel(); updateCounter();
+  resultEl.className = "idle";
+  resultEl.textContent = "已重置，点击开始抽签";
+};
+
+wheel.onclick = () => { if (!spinning) spin(); };
+
+document.getElementById("applyRoster").onclick = () => {
+  const names = rosterText.value.split(/[\n,，、;；\s]+/).map(s => s.trim()).filter(Boolean);
+  if (!names.length) return alert("名单为空");
+  fullAll = [...new Set(names)];
+  remainingMap = { all: fullAll.slice(), a: GROUP_NAMES.a.slice(), b: GROUP_NAMES.b.slice() };
+  save(); drawWheel(); updateCounter();
+  resultEl.className = "idle";
+  resultEl.textContent = "全员名单已更新，全部奖池已重置";
+};
+
+/* ============ 初始化 ============ */
+load();
+rosterText.value = fullAll.join("、");
+drawWheel();
+updateCounter();
+</script>
+</body>
+</html>
